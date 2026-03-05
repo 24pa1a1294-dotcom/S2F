@@ -1,8 +1,5 @@
 import { useState, useEffect } from 'react';
 import './index.css';
-import { auth, db } from './firebase';
-import { signInAnonymously, onAuthStateChanged } from 'firebase/auth';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
 
 // Predefined Data for Skills & Roadmaps
 const careerDataMap = {
@@ -224,78 +221,43 @@ function App() {
 
   // State for Streak system
   const [streak, setStreak] = useState(0);
-  const [firebaseUser, setFirebaseUser] = useState(null);
 
-  // Authenticate User Anonymously
+  // Streak Logic: Runs once when dashboard is loaded
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      if (user) {
-        setFirebaseUser(user);
+    // Read the current streak and last login date from localStorage
+    const storedStreak = parseInt(localStorage.getItem('streakCount') || '0', 10);
+    const storedDate = localStorage.getItem('lastLoginDate');
+
+    // Get today's and yesterday's dates as consistent strings (YYYY-MM-DD)
+    const todayObj = new Date();
+    const today = todayObj.toLocaleDateString('en-CA');
+
+    const yesterdayObj = new Date();
+    yesterdayObj.setDate(yesterdayObj.getDate() - 1);
+    const yesterday = yesterdayObj.toLocaleDateString('en-CA');
+
+    let currentStreak = storedStreak;
+
+    // Check condition based on last login date
+    if (!storedDate) {
+      // First time login
+      currentStreak = 1;
+    } else {
+      if (storedDate === today) {
+        // Logged in today, streak maintains, do nothing
+      } else if (storedDate === yesterday) {
+        // Gap is 1 day, last login was yesterday -> increment streak
+        currentStreak += 1;
       } else {
-        signInAnonymously(auth).catch((error) => {
-          console.error("Firebase Anonymous Auth Error", error);
-        });
+        // Gap > 1 day -> reset streak to 1
+        currentStreak = 1;
       }
-    });
-    return () => unsubscribe();
+    }
+
+    setStreak(currentStreak);
+    localStorage.setItem('streakCount', currentStreak.toString());
+    localStorage.setItem('lastLoginDate', today);
   }, []);
-
-  // Streak Logic: Runs when a user is authenticated
-  useEffect(() => {
-    if (!firebaseUser) return;
-
-    const fetchStreak = async () => {
-      try {
-        const userRef = doc(db, 'users', firebaseUser.uid);
-        const docSnap = await getDoc(userRef);
-
-        const todayObj = new Date();
-        const today = todayObj.toLocaleDateString('en-CA');
-
-        const yesterdayObj = new Date();
-        yesterdayObj.setDate(yesterdayObj.getDate() - 1);
-        const yesterday = yesterdayObj.toLocaleDateString('en-CA');
-
-        let currentStreak = 0;
-        let storedDate = null;
-
-        if (docSnap.exists()) {
-          const data = docSnap.data();
-          currentStreak = data.streakCount || 0;
-          storedDate = data.lastLoginDate;
-        }
-
-        // Check condition based on last login date
-        if (!storedDate) {
-          // First time login
-          currentStreak = 1;
-        } else {
-          if (storedDate === today) {
-            // Logged in today, do nothing
-          } else if (storedDate === yesterday) {
-            // Increment streak
-            currentStreak += 1;
-          } else {
-            // Reset streak
-            currentStreak = 1;
-          }
-        }
-
-        setStreak(currentStreak);
-
-        // Update Firestore
-        await setDoc(userRef, {
-          streakCount: currentStreak,
-          lastLoginDate: today
-        }, { merge: true });
-
-      } catch (err) {
-        console.error("Error fetching or updating streak from Firestore:", err);
-      }
-    };
-
-    fetchStreak();
-  }, [firebaseUser]);
 
   // Determine which Badge to show based on streak milestones
   let badgeText = '';
